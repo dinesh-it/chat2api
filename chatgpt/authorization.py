@@ -11,6 +11,7 @@ from fastapi import HTTPException
 import utils.config as configs
 import utils.globals as globals
 from chatgpt.refreshToken import rt2ac
+from chatgpt.browser_token import get_browser_access_token
 from utils.Logger import logger
 
 
@@ -92,12 +93,36 @@ def get_fp(req_token):
             return fp
 
 
+async def get_auto_browser_token():
+    """Retrieve access token from browser session if enabled"""
+    if configs.auto_browser_token:
+        try:
+            logger.info("Attempting to retrieve access token from browser session...")
+            token = await get_browser_access_token()
+            if token:
+                logger.info("Successfully retrieved token from browser")
+                return token
+            else:
+                logger.warning("Failed to retrieve token from browser")
+        except Exception as e:
+            logger.error(f"Error retrieving browser token: {e}")
+    return None
+
+
 async def verify_token(req_token):
     if not req_token:
+        # Try to get token from browser if enabled
+        if configs.auto_browser_token:
+            browser_token = await get_auto_browser_token()
+            if browser_token:
+                return browser_token
+        
+        # If we have an authorization list configured, require a token
         if configs.authorization_list:
             logger.error("Unauthorized with empty token.")
             raise HTTPException(status_code=401)
         else:
+            # No authorization list and no browser token - allow anonymous access
             return None
     else:
         if req_token.startswith("eyJhbGciOi") or req_token.startswith("fk-"):
@@ -116,7 +141,29 @@ async def verify_token(req_token):
             return req_token
 
 
+async def refresh_browser_token():
+    """Refresh browser token and add to token list if successful"""
+    if configs.auto_browser_token:
+        try:
+            browser_token = await get_auto_browser_token()
+            if browser_token:
+                # Add to token list if not already present
+                if browser_token not in globals.token_list:
+                    globals.token_list.append(browser_token)
+                    # Optionally save to file
+                    with open(globals.TOKENS_FILE, "a", encoding="utf-8") as f:
+                        f.write(f"\n{browser_token}")
+                    logger.info("Browser token added to token list")
+                return browser_token
+        except Exception as e:
+            logger.error(f"Error refreshing browser token: {e}")
+    return None
+
+
 async def refresh_all_tokens(force_refresh=False):
+    # Refresh browser token if enabled
+    await refresh_browser_token()
+    
     for token in list(set(globals.token_list) - set(globals.error_token_list)):
         if len(token) == 45:
             try:

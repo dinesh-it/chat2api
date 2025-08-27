@@ -2,20 +2,39 @@ import asyncio
 import types
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Request, HTTPException, Form, Security
+from fastapi import Request, HTTPException, Form, Security, Depends
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.background import BackgroundTask
+from typing import Optional
 
 import utils.globals as globals
 from app import app, templates, security_scheme
 from chatgpt.ChatService import ChatService
 from chatgpt.authorization import refresh_all_tokens
 from utils.Logger import logger
-from utils.config import api_prefix, scheduled_refresh
+from utils.config import api_prefix, scheduled_refresh, auto_browser_token
 from utils.retry import async_retry
 
 scheduler = AsyncIOScheduler()
+
+# Create a custom security scheme that makes auth optional when browser token is enabled
+optional_security = HTTPBearer(auto_error=False)
+
+
+async def get_token(credentials: Optional[HTTPAuthorizationCredentials] = Security(optional_security)) -> Optional[str]:
+    """
+    Custom authentication dependency that handles both manual tokens and browser tokens
+    """
+    if credentials:
+        # Token provided in Authorization header
+        return credentials.credentials
+    elif auto_browser_token:
+        # No token provided but browser token is enabled - return None and let verify_token handle it
+        return None
+    else:
+        # No token and browser token disabled - require authentication
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
 
 @app.on_event("startup")
@@ -50,8 +69,7 @@ async def process(request_data, req_token):
 
 
 @app.post(f"/{api_prefix}/v1/chat/completions" if api_prefix else "/v1/chat/completions")
-async def send_conversation(request: Request, credentials: HTTPAuthorizationCredentials = Security(security_scheme)):
-    req_token = credentials.credentials
+async def send_conversation(request: Request, req_token: Optional[str] = Depends(get_token)):
     try:
         request_data = await request.json()
     except Exception:

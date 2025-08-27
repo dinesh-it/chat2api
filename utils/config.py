@@ -57,6 +57,7 @@ user_agents_list = ast.literal_eval(user_agents_list_str)
 enable_gateway = is_true(os.getenv('ENABLE_GATEWAY', False))
 auto_seed = is_true(os.getenv('AUTO_SEED', True))
 no_sentinel = is_true(os.getenv('NO_SENTINEL', False))
+auto_browser_token = is_true(os.getenv('AUTO_BROWSER_TOKEN', False))
 
 with open('version.txt') as f:
     version = f.read().strip()
@@ -89,4 +90,5 @@ logger.info("OAI_LANGUAGE:      " + str(oai_language))
 logger.info("------------------------- Gateway --------------------------")
 logger.info("ENABLE_GATEWAY:    " + str(enable_gateway))
 logger.info("AUTO_SEED:         " + str(auto_seed))
+logger.info("AUTO_BROWSER_TOKEN:" + str(auto_browser_token))
 logger.info("-" * 60)
